@@ -1,9 +1,13 @@
 name: Linux_Container_Workflow
 
 on:
+  workflow_dispatch: # This adds the manual "Run workflow" button
   push:
     branches:
-      - main  # Triggers whenever you push to main
+      - main
+    paths-ignore:
+      - 'README.md'
+      - '.gitignore'
 
 jobs:
   build-and-deploy:
