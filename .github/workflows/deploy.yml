@@ -43,4 +43,7 @@ jobs:
         name: helloapi-instance
         location: malaysiawest
         ports: 5000
-        secure-environment-variables: REGISTRY_PASSWORD=${{ secrets.REGISTRY_PASSWORD }}
+        # ADD THESE THREE LINES BELOW:
+        registry-login-server: helloapi.azurecr.io
+        registry-username: ${{ secrets.REGISTRY_USERNAME }}
+        registry-password: ${{ secrets.REGISTRY_PASSWORD }}
