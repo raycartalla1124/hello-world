@@ -1,52 +1,69 @@
 name: Linux_Container_Workflow
 
 on:
-  workflow_dispatch:
-    inputs:
-      reason:
-        description: 'Why are you deploying?'
-        required: false
-        default: 'Manual update'
+  push:
+    branches: [ main ]         # Automatic: Push to main = Staging
+  workflow_dispatch:           # Manual: Click button = Production
 
 jobs:
-  build-and-deploy:
+  build-and-push:
     runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ github.sha }}
     steps:
-    # 1. Checkout your code
-    - name: Checkout GitHub Action
-      uses: actions/checkout@v3
+      - uses: actions/checkout@v3
+      - name: 'Login to Azure & ACR'
+        uses: azure/docker-login@v1
+        with:
+          login-server: helloapi.azurecr.io
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+      - name: 'Build and Push'
+        run: |
+          docker build . -t helloapi.azurecr.io/helloworld:${{ github.sha }}
+          docker push helloapi.azurecr.io/helloworld:${{ github.sha }}
 
-    # 2. Login to Azure using the secret JSON
-    - name: 'Login via Azure CLI'
-      uses: azure/login@v1
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
+  deploy-staging:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'  # Only runs on push
+    steps:
+      - name: 'Login via Azure CLI'
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: 'Deploy to Staging'
+        uses: 'azure/aci-deploy@v1'
+        with:
+          resource-group: dev.uno-rg
+          name: helloapi-staging
+          dns-name-label: hello-api-raydev-staging
+          image: helloapi.azurecr.io/helloworld:${{ github.sha }}
+          registry-login-server: helloapi.azurecr.io
+          registry-username: ${{ secrets.REGISTRY_USERNAME }}
+          registry-password: ${{ secrets.REGISTRY_PASSWORD }}
+          location: malaysiawest
+          ports: 5000
 
-    # 3. Login to ACR
-    - name: 'Login to ACR'
-      uses: azure/docker-login@v1
-      with:
-        login-server: helloapi.azurecr.io
-        username: ${{ secrets.REGISTRY_USERNAME }}
-        password: ${{ secrets.REGISTRY_PASSWORD }}
-
-    # 4. Build and Push the image
-    - name: 'Build and Push Image'
-      run: |
-        docker build . -t helloapi.azurecr.io/helloworld:${{ github.sha }}
-        docker push helloapi.azurecr.io/helloworld:${{ github.sha }}
-
-    # 5. Deploy to Azure Container Instances
-    - name: 'Deploy to Azure Container Instances'
-      uses: 'azure/aci-deploy@v1'
-      with:
-        resource-group: dev.uno-rg
-        dns-name-label: hello-api-raydev
-        image: helloapi.azurecr.io/helloworld:${{ github.sha }}
-        name: helloapi-instance
-        location: malaysiawest
-        ports: 5000
-        # ADD THESE THREE LINES BELOW:
-        registry-login-server: helloapi.azurecr.io
-        registry-username: ${{ secrets.REGISTRY_USERNAME }}
-        registry-password: ${{ secrets.REGISTRY_PASSWORD }}
+  deploy-production:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    environment: production  # This is the magic line
+    steps:
+      - name: 'Login via Azure CLI'
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: 'Deploy to Production'
+        uses: 'azure/aci-deploy@v1'
+        with:
+          resource-group: dev.uno-rg
+          name: helloapi-instance
+          dns-name-label: hello-api-raydev
+          image: helloapi.azurecr.io/helloworld:${{ github.sha }}
+          registry-login-server: helloapi.azurecr.io
+          registry-username: ${{ secrets.REGISTRY_USERNAME }}
+          registry-password: ${{ secrets.REGISTRY_PASSWORD }}
+          location: malaysiawest
+          ports: 5000
